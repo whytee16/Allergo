@@ -60,9 +60,9 @@ if "premium" not in st.session_state:
     st.session_state.premium = db.get_setting(USER_ID, "premium", "0") == "1"
 
 with st.sidebar:
-    st.markdown("## 🌿 Алерго")
+    st.markdown("## 🌿 Allergo")
     st.caption("Персональный дневник для аллергиков")
-    st.markdown(f"{st.session_state.username}**")
+    st.markdown(f"{st.session_state.username}")
     page = st.radio(
         "Раздел",
         ["Дневник", "Мои аллергены", "Перекрёстная аллергия", "Аналитика", "Подписка"],
