@@ -61,7 +61,7 @@ if "premium" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## 🌿 Алерго")
-    st.caption("Персональный дневник для аллергиков · VentureHack 2026 · MedTech")
+    st.caption("Персональный дневник для аллергиков")
     st.markdown(f"{st.session_state.username}**")
     page = st.radio(
         "Раздел",
