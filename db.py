@@ -1,7 +1,3 @@
-"""
-Слой хранения данных. SQLite — просто, портируемо, достаточно для MVP хакатона.
-Все записи дневника и настройки привязаны к user_id (см. auth.py).
-"""
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -26,14 +22,6 @@ def _column_exists(conn, table: str, column: str) -> bool:
 
 
 def _migrate_legacy_schema(conn):
-    """
-    Более ранняя версия приложения (до добавления логина) создавала
-    symptom_log и user_settings БЕЗ колонки user_id. Если такая база уже
-    существует на диске (например, осталась от предыдущего деплоя на
-    Streamlit Cloud), новые запросы с user_id падают с OperationalError.
-    Раз это MVP-демо без критичных данных, просто пересоздаём такие
-    устаревшие таблицы — CREATE TABLE IF NOT EXISTS их не тронет сам по себе.
-    """
     for table in ("symptom_log", "user_settings"):
         if _table_exists(conn, table) and not _column_exists(conn, table, "user_id"):
             conn.execute(f"DROP TABLE {table}")
@@ -79,9 +67,6 @@ def init_db():
     )
     conn.commit()
     conn.close()
-
-
-# ---------- дневник (scoped по user_id) ----------
 
 def add_entry(user_id: int, body_zone: str, symptom: str, severity: int,
               allergen: str, note: str = "", logged_at: str = None):
