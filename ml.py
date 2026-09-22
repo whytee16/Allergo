@@ -15,13 +15,17 @@ def get_pollen_concentration(date: datetime, allergen: str) -> float:
     peak = info["peak_month"]
     month_frac = date.month + date.day / 31
     distance = min(abs(month_frac - peak), 12 - abs(month_frac - peak))
-    seasonal = max(0.0, 1 - distance / 3.0)
+    seasonal = max(0.0, 1 - distance / 3.0)  # спад до 0 за ~3 месяца от пика
     base = 500 * info["danger"] * seasonal
     daily_noise = 1 + 0.3 * math.sin(date.timetuple().tm_yday)
     return round(max(base * daily_noise, 0), 1)
 
 
 def estimate_threshold(entries: list, allergen: str):
+    """
+    entries: список словарей из db.get_all_entries(), уже отфильтрованных по allergen.
+    Возвращает (threshold, r2) или (None, None), если данных недостаточно.
+    """
     if len(entries) < 5:
         return None, None
 
@@ -40,6 +44,7 @@ def estimate_threshold(entries: list, allergen: str):
     model = LinearRegression().fit(X, Y)
     r2 = model.score(X, Y)
 
+    # Порог = концентрация, при которой прогнозируемая тяжесть симптомов достигает 3/5
     slope, intercept = model.coef_[0], model.intercept_
     if slope <= 0:
         return None, r2
