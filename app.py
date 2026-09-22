@@ -1,87 +1,143 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, time
+from datetime import datetime, date
 
 import db
+import auth
 from data.allergens import POLLEN_ALLERGENS, HOUSEHOLD_ALLERGENS, FOOD_ALLERGENS, ALL_ALLERGEN_NAMES
 from data.food_cross_reactions import CROSS_REACTIONS
 from data.symptoms import SYMPTOMS_BY_ZONE, EMERGENCY_ZONE
 from ml import estimate_threshold, get_pollen_concentration
 
-st.set_page_config(page_title="Алерго - дневник аллергии", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Алерго — дневник аллергика", page_icon="🌿", layout="wide")
 db.init_db()
 
-# ---------- сессия: подписка (демо-переключатель для питча) ----------
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+    st.session_state.username = None
+
+if not st.session_state.user_id:
+    st.title("🌿 Алерго")
+    st.caption("Персональный дневник аллергии")
+
+    tab_login, tab_register = st.tabs(["Вход", "Регистрация"])
+
+    with tab_login:
+        with st.form("login_form"):
+            u = st.text_input("Имя пользователя", key="login_user")
+            p = st.text_input("Пароль", type="password", key="login_pass")
+            if st.form_submit_button("Войти", type="primary"):
+                ok, user_id = auth.verify(u, p)
+                if ok:
+                    st.session_state.user_id = user_id
+                    st.session_state.username = u.strip()
+                    st.rerun()
+                else:
+                    st.error("Неверное имя пользователя или пароль.")
+
+    with tab_register:
+        with st.form("register_form"):
+            ru = st.text_input("Имя пользователя", key="reg_user")
+            rp = st.text_input("Пароль", type="password", key="reg_pass")
+            rp2 = st.text_input("Повторите пароль", type="password", key="reg_pass2")
+            if st.form_submit_button("Создать аккаунт", type="primary"):
+                if rp != rp2:
+                    st.error("Пароли не совпадают.")
+                else:
+                    ok, result = auth.register(ru, rp)
+                    if ok:
+                        st.session_state.user_id = result
+                        st.session_state.username = ru.strip()
+                        st.rerun()
+                    else:
+                        st.error(result)
+
+    st.stop()
+
+USER_ID = st.session_state.user_id
+
 if "premium" not in st.session_state:
-    st.session_state.premium = db.get_setting("premium", "0") == "1"
+    st.session_state.premium = db.get_setting(USER_ID, "premium", "0") == "1"
 
 with st.sidebar:
     st.markdown("## 🌿 Алерго")
     st.caption("Персональный дневник для аллергиков")
+    st.markdown(f" **{st.session_state.username}**")
     page = st.radio(
         "Раздел",
-        [" Дневник", " Мои аллергены", " Перекрёстная аллергия", " Аналитика", " Подписка"],
+        ["Дневник", "Мои аллергены", "Перекрёстная аллергия", "Аналитика", "Подписка"],
         label_visibility="collapsed",
     )
     st.divider()
     plan = "Premium " if st.session_state.premium else "Free"
     st.markdown(f"**Тариф:** {plan}")
+    if st.button("Выйти"):
+        st.session_state.user_id = None
+        st.session_state.username = None
+        st.session_state.premium = False
+        st.rerun()
 
 MY_ALLERGENS_KEY = "my_allergens"
 
 
 def get_my_allergens():
-    raw = db.get_setting(MY_ALLERGENS_KEY, "")
+    raw = db.get_setting(USER_ID, MY_ALLERGENS_KEY, "")
     return [a for a in raw.split("|") if a]
 
 
 def set_my_allergens(allergens):
-    db.set_setting(MY_ALLERGENS_KEY, "|".join(allergens))
+    db.set_setting(USER_ID, MY_ALLERGENS_KEY, "|".join(allergens))
 
-if page == " Дневник":
+if page == "Дневник":
     st.title("Дневник симптомов")
     st.caption("Фиксируйте, что случилось, когда и на что — это основа персональных рекомендаций.")
+
+    zone = st.selectbox("Зона тела", list(SYMPTOMS_BY_ZONE.keys()), key="diary_zone")
 
     with st.form("new_entry", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             entry_date = st.date_input("Дата", value=date.today())
             entry_time = st.time_input("Время", value=datetime.now().time().replace(second=0, microsecond=0))
-            zone = st.selectbox("Зона тела", list(SYMPTOMS_BY_ZONE.keys()))
-        with c2:
             symptom = st.selectbox("Симптом", SYMPTOMS_BY_ZONE[zone])
+        with c2:
             severity = st.slider("Тяжесть (1 — лёгкая, 5 — тяжёлая)", 1, 5, 2)
-            allergen = st.selectbox("Подозреваемый аллерген (предположительно)", ["Не знаю"] + ALL_ALLERGEN_NAMES)
-        note = st.text_input("Заметка (необязательно)", placeholder="например: съел дыню, было ветрено")
+            my_allergens = get_my_allergens()
+            allergen_options = ["Не знаю"] + ALL_ALLERGEN_NAMES
+            default_idx = allergen_options.index(my_allergens[0]) if my_allergens and my_allergens[0] in allergen_options else 0
+            allergen = st.selectbox("Подозреваемый аллерген", allergen_options, index=default_idx)
+        note = st.text_input("Заметка (необязательно)", placeholder="например: съела дыню")
 
         submitted = st.form_submit_button("Добавить запись", type="primary")
         if submitted:
+            final_severity = severity
             if zone == EMERGENCY_ZONE:
-                severity = 5
-                st.warning("Отмечена острая реакция. При анафилаксии или отёке Квинке — немедленно звоните 103.")
+                final_severity = 5
+                st.warning("Отмечена острая реакция. При анафилаксии или отёке Квинке — немедленно звоните 103!")
             logged_at = datetime.combine(entry_date, entry_time).isoformat(timespec="minutes")
-            db.add_entry(zone, symptom, severity, None if allergen == "Не знаю" else allergen, note, logged_at)
+            db.add_entry(USER_ID, zone, symptom, final_severity,
+                         None if allergen == "Не знаю" else allergen, note, logged_at)
             st.success("Запись добавлена.")
 
     st.divider()
-    entries = db.get_all_entries()
+    entries = db.get_all_entries(USER_ID)
     if not entries:
-        st.info("Пока нет записей — добавьте первую выше.")
+        st.info("Пока нет записей — создайте новую.")
     else:
         df = pd.DataFrame(entries)
-        show = df[["logged_at", "body_zone", "symptom", "severity", "allergen", "note"]].rename(
+        show = df[["id", "logged_at", "body_zone", "symptom", "severity", "allergen", "note"]].rename(
             columns={"logged_at": "Когда", "body_zone": "Зона", "symptom": "Симптом",
                      "severity": "Тяжесть", "allergen": "Аллерген", "note": "Заметка"}
         )
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        st.dataframe(show.drop(columns=["id"]), use_container_width=True, hide_index=True)
 
         with st.expander("Удалить запись"):
             to_delete = st.selectbox("Выберите ID для удаления", df["id"].tolist())
             if st.button("Удалить"):
-                db.delete_entry(int(to_delete))
+                db.delete_entry(USER_ID, int(to_delete))
                 st.rerun()
 
-elif page == " Мои аллергены":
+elif page == "Мои аллергены":
     st.title("Мои аллергены")
     st.caption("Отметьте подтверждённые или подозреваемые аллергены — это включит персональные уведомления.")
 
@@ -102,14 +158,14 @@ elif page == " Мои аллергены":
         st.success("Сохранено.")
 
     st.divider()
-    st.subheader("Календарь аллергенов (по месяцам)")
+    st.subheader("Календарь пыления (по месяцам)")
     cal_rows = []
     for name, info in POLLEN_ALLERGENS.items():
-        cal_rows.append({"Аллерген": name, "Сезон": info["season"], "Пик": info["peak_month"],
-                          "Опасность":  info["danger"], "Регион": info["region"]})
+        cal_rows.append({"Аллерген": name, "Сезон": info["season"], "Пик (месяц)": info["peak_month"],
+                          "Опасность": info["danger"], "Регион": info["region"]})
     st.dataframe(pd.DataFrame(cal_rows), use_container_width=True, hide_index=True)
 
-elif page == " Перекрёстная аллергия":
+elif page == "Перекрёстная аллергия":
     st.title("Навигатор перекрёстной пищевой аллергии")
     st.caption("Если у вас поллиноз, часть продуктов может вызывать реакцию из-за похожих белков.")
 
@@ -125,22 +181,22 @@ elif page == " Перекрёстная аллергия":
 
     rows = CROSS_REACTIONS[allergen]
     df = pd.DataFrame(rows, columns=["Продукт", "Категория", "Частота реакций", "Опасность", "Примечание"])
-    df["Опасность"] = df["Опасность"].apply(lambda d:  d)
+    df["Опасность"] = df["Опасность"].apply(lambda d: d)
 
     if st.session_state.premium:
         st.dataframe(df.sort_values("Продукт"), use_container_width=True, hide_index=True)
     else:
         st.dataframe(df.head(4), use_container_width=True, hide_index=True)
         st.info(f"Free-тариф показывает 4 из {len(df)} продуктов. "
-                "Оформите Premium, чтобы видеть полный список по каждому аллергену.")
+                "Оформите Premium на странице «Подписка», чтобы видеть полный список.")
 
     st.divider()
     st.subheader("Проверить конкретный продукт")
     product_query = st.text_input("Название продукта")
     if product_query:
         hits = []
-        for alg, rows in CROSS_REACTIONS.items():
-            for r in rows:
+        for alg, rws in CROSS_REACTIONS.items():
+            for r in rws:
                 if product_query.strip().lower() in r[0].lower():
                     hits.append((alg, *r))
         if hits:
@@ -151,7 +207,7 @@ elif page == " Перекрёстная аллергия":
 
 elif page == "Аналитика":
     st.title("Аналитика")
-    entries = db.get_all_entries()
+    entries = db.get_all_entries(USER_ID)
     if not entries:
         st.info("Добавьте записи в дневник, чтобы увидеть аналитику.")
     else:
@@ -174,22 +230,26 @@ elif page == "Аналитика":
         st.divider()
         st.subheader("Персональный порог чувствительности")
         if not st.session_state.premium:
-            st.info("Расчёт персонального порога доступен в Premium.")
+            st.info("Расчёт персонального порога доступен в Premium (страница «Подписка»).")
         else:
-            allergen_options = [a for a in df["allergen"].dropna().unique() if a in POLLEN_ALLERGENS]
+            allergen_options = sorted({e["allergen"] for e in entries if e["allergen"] in POLLEN_ALLERGENS})
             if not allergen_options:
-                st.write("Отметьте пыльцевой аллерген у ваших записей в дневнике, чтобы рассчитать порог.")
+                st.write(
+                    "Для расчёта нужны записи в дневнике с указанным пыльцевым аллергеном "
+                    "(поле «Подозреваемый аллерген» при добавлении записи) — сейчас таких записей нет."
+                )
             else:
                 chosen = st.selectbox("Аллерген для расчёта", allergen_options)
                 subset = [e for e in entries if e["allergen"] == chosen]
                 threshold, r2 = estimate_threshold(subset, chosen)
                 if threshold is None:
-                    st.write("Недостаточно данных (нужно минимум 5 записей с этим аллергеном) "
-                             "или связь пыльца/симптомы пока не выявлена.")
+                    st.write(f"Найдено записей с «{chosen}»: {len(subset)}. "
+                             "Нужно минимум 5, чтобы построить модель, либо связь пыльца/симптомы пока не выявлена.")
                 else:
                     today_conc = get_pollen_concentration(datetime.now(), chosen)
-                    st.metric(f"Ваш порог для «{chosen}»", f"{threshold} зёрен/м³", help=f"R² модели: {r2}")
-                    st.metric("Оценка концентрации сегодня", f"{today_conc} зёрен/м³")
+                    m1, m2 = st.columns(2)
+                    m1.metric(f"Ваш порог для «{chosen}»", f"{threshold} зёрен/м³", help=f"R² модели: {r2}")
+                    m2.metric("Оценка концентрации сегодня", f"{today_conc} зёрен/м³")
                     if today_conc >= threshold:
                         st.error("Сегодняшняя концентрация выше вашего порога — вероятны симптомы. "
                                  "Рассмотрите приём антигистаминного заранее.")
@@ -198,7 +258,7 @@ elif page == "Аналитика":
 
 elif page == "Подписка":
     st.title("Подписка")
-    st.caption("Демо переключателя тарифа.")
+    st.caption("Демо переключателя тарифа")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -207,6 +267,7 @@ elif page == "Подписка":
             "- Дневник симптомов без ограничений\n"
             "- Календарь пыления\n"
             "- Перекрёстная аллергия: превью (4 продукта на аллерген)\n"
+            "- Базовая аналитика (динамика тяжести, частота по зонам)\n"
         )
     with col2:
         st.subheader("Premium — 990 ₸/мес")
@@ -218,10 +279,13 @@ elif page == "Подписка":
         )
 
     st.divider()
-    toggle = st.toggle("Включить Premium (демо-режим для жюри)", value=st.session_state.premium)
+    current_plan = "Premium" if st.session_state.premium else "Free"
+    st.markdown(f"Текущий тариф: **{current_plan}**")
+    toggle = st.toggle("Включить Premium (демо-режим для жюри)", value=st.session_state.premium, key="premium_toggle")
     if toggle != st.session_state.premium:
         st.session_state.premium = toggle
-        db.set_setting("premium", "1" if toggle else "0")
+        db.set_setting(USER_ID, "premium", "1" if toggle else "0")
+        st.success("Тариф обновлён: " + ("Premium " if toggle else "Free"))
         st.rerun()
 
     st.divider()
