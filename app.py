@@ -8,7 +8,7 @@ from data.food_cross_reactions import CROSS_REACTIONS
 from data.symptoms import SYMPTOMS_BY_ZONE, EMERGENCY_ZONE
 from ml import estimate_threshold, get_pollen_concentration
 
-st.set_page_config(page_title="Алерго — дневник аллергика", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Алерго - дневник аллергии", page_icon="🌿", layout="wide")
 db.init_db()
 
 # ---------- сессия: подписка (демо-переключатель для питча) ----------
@@ -17,14 +17,14 @@ if "premium" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## 🌿 Алерго")
-    st.caption("Персональный дневник для аллергиков · VentureHack 2026 · MedTech")
+    st.caption("Персональный дневник для аллергиков")
     page = st.radio(
         "Раздел",
-        ["📔 Дневник", "🧬 Мои аллергены", "🍽️ Перекрёстная аллергия", "📊 Аналитика", "💳 Подписка"],
+        [" Дневник", " Мои аллергены", " Перекрёстная аллергия", " Аналитика", " Подписка"],
         label_visibility="collapsed",
     )
     st.divider()
-    plan = "Premium ✨" if st.session_state.premium else "Free"
+    plan = "Premium " if st.session_state.premium else "Free"
     st.markdown(f"**Тариф:** {plan}")
 
 MY_ALLERGENS_KEY = "my_allergens"
@@ -38,11 +38,7 @@ def get_my_allergens():
 def set_my_allergens(allergens):
     db.set_setting(MY_ALLERGENS_KEY, "|".join(allergens))
 
-
-# =========================================================
-# 📔 ДНЕВНИК
-# =========================================================
-if page == "📔 Дневник":
+if page == " Дневник":
     st.title("Дневник симптомов")
     st.caption("Фиксируйте, что случилось, когда и на что — это основа персональных рекомендаций.")
 
@@ -55,8 +51,8 @@ if page == "📔 Дневник":
         with c2:
             symptom = st.selectbox("Симптом", SYMPTOMS_BY_ZONE[zone])
             severity = st.slider("Тяжесть (1 — лёгкая, 5 — тяжёлая)", 1, 5, 2)
-            allergen = st.selectbox("Подозреваемый аллерген (опционально)", ["Не знаю"] + ALL_ALLERGEN_NAMES)
-        note = st.text_input("Заметка (необязательно)", placeholder="например: ела дыню, было ветрено")
+            allergen = st.selectbox("Подозреваемый аллерген (предположительно)", ["Не знаю"] + ALL_ALLERGEN_NAMES)
+        note = st.text_input("Заметка (необязательно)", placeholder="например: съел дыню, было ветрено")
 
         submitted = st.form_submit_button("Добавить запись", type="primary")
         if submitted:
@@ -85,10 +81,7 @@ if page == "📔 Дневник":
                 db.delete_entry(int(to_delete))
                 st.rerun()
 
-# =========================================================
-# 🧬 МОИ АЛЛЕРГЕНЫ
-# =========================================================
-elif page == "🧬 Мои аллергены":
+elif page == " Мои аллергены":
     st.title("Мои аллергены")
     st.caption("Отметьте подтверждённые или подозреваемые аллергены — это включит персональные уведомления.")
 
@@ -109,17 +102,14 @@ elif page == "🧬 Мои аллергены":
         st.success("Сохранено.")
 
     st.divider()
-    st.subheader("Календарь пыления (по месяцам)")
+    st.subheader("Календарь аллергенов (по месяцам)")
     cal_rows = []
     for name, info in POLLEN_ALLERGENS.items():
         cal_rows.append({"Аллерген": name, "Сезон": info["season"], "Пик": info["peak_month"],
-                          "Опасность": "🔴" * info["danger"], "Регион": info["region"]})
+                          "Опасность":  info["danger"], "Регион": info["region"]})
     st.dataframe(pd.DataFrame(cal_rows), use_container_width=True, hide_index=True)
 
-# =========================================================
-# 🍽️ ПЕРЕКРЁСТНАЯ АЛЛЕРГИЯ
-# =========================================================
-elif page == "🍽️ Перекрёстная аллергия":
+elif page == " Перекрёстная аллергия":
     st.title("Навигатор перекрёстной пищевой аллергии")
     st.caption("Если у вас поллиноз, часть продуктов может вызывать реакцию из-за похожих белков.")
 
@@ -131,11 +121,11 @@ elif page == "🍽️ Перекрёстная аллергия":
     current_month = date.today().month
     peak = POLLEN_ALLERGENS.get(allergen, {}).get("peak_month")
     if peak and abs(current_month - peak) <= 1:
-        st.warning(f"⚠️ Сейчас активен сезон «{allergen}» — будьте особенно внимательны к продуктам ниже.")
+        st.warning(f"Сейчас активен сезон «{allergen}» — будьте особенно внимательны к продуктам ниже.")
 
     rows = CROSS_REACTIONS[allergen]
     df = pd.DataFrame(rows, columns=["Продукт", "Категория", "Частота реакций", "Опасность", "Примечание"])
-    df["Опасность"] = df["Опасность"].apply(lambda d: "🔴" * d)
+    df["Опасность"] = df["Опасность"].apply(lambda d:  d)
 
     if st.session_state.premium:
         st.dataframe(df.sort_values("Продукт"), use_container_width=True, hide_index=True)
@@ -145,7 +135,7 @@ elif page == "🍽️ Перекрёстная аллергия":
                 "Оформите Premium, чтобы видеть полный список по каждому аллергену.")
 
     st.divider()
-    st.subheader("🔍 Проверить конкретный продукт")
+    st.subheader("Проверить конкретный продукт")
     product_query = st.text_input("Название продукта")
     if product_query:
         hits = []
@@ -159,10 +149,7 @@ elif page == "🍽️ Перекрёстная аллергия":
         else:
             st.write("Перекрёстных реакций для этого продукта в базе не найдено.")
 
-# =========================================================
-# 📊 АНАЛИТИКА
-# =========================================================
-elif page == "📊 Аналитика":
+elif page == "Аналитика":
     st.title("Аналитика")
     entries = db.get_all_entries()
     if not entries:
@@ -185,7 +172,7 @@ elif page == "📊 Аналитика":
         st.bar_chart(df["body_zone"].value_counts())
 
         st.divider()
-        st.subheader("🎯 Персональный порог чувствительности")
+        st.subheader("Персональный порог чувствительности")
         if not st.session_state.premium:
             st.info("Расчёт персонального порога доступен в Premium.")
         else:
@@ -204,17 +191,14 @@ elif page == "📊 Аналитика":
                     st.metric(f"Ваш порог для «{chosen}»", f"{threshold} зёрен/м³", help=f"R² модели: {r2}")
                     st.metric("Оценка концентрации сегодня", f"{today_conc} зёрен/м³")
                     if today_conc >= threshold:
-                        st.error("⚠️ Сегодняшняя концентрация выше вашего порога — вероятны симптомы. "
+                        st.error("Сегодняшняя концентрация выше вашего порога — вероятны симптомы. "
                                  "Рассмотрите приём антигистаминного заранее.")
                     else:
                         st.success("Концентрация ниже вашего обычного порога.")
 
-# =========================================================
-# 💳 ПОДПИСКА
-# =========================================================
-elif page == "💳 Подписка":
+elif page == "Подписка":
     st.title("Подписка")
-    st.caption("Демо переключателя тарифа — для питча и демонстрации бизнес-модели жюри.")
+    st.caption("Демо переключателя тарифа.")
 
     col1, col2 = st.columns(2)
     with col1:
