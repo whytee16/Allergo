@@ -9,7 +9,7 @@ from data.food_cross_reactions import CROSS_REACTIONS
 from data.symptoms import SYMPTOMS_BY_ZONE, EMERGENCY_ZONE
 from ml import estimate_threshold, get_pollen_concentration
 
-st.set_page_config(page_title="Алерго — дневник аллергика", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Allergo — дневник аллергика", page_icon="🌿", layout="wide")
 db.init_db()
 
 if "user_id" not in st.session_state:
@@ -17,7 +17,7 @@ if "user_id" not in st.session_state:
     st.session_state.username = None
 
 if not st.session_state.user_id:
-    st.title("🌿 Алерго")
+    st.title("🌿 Allergo")
     st.caption("Персональный дневник аллергии")
 
     tab_login, tab_register = st.tabs(["Вход", "Регистрация"])
