@@ -2,10 +2,8 @@ import math
 from datetime import datetime
 
 import numpy as np
-from sklearn.linear_model import LinearRegression
 
 from data.allergens import POLLEN_ALLERGENS
-
 
 def get_pollen_concentration(date: datetime, allergen: str) -> float:
     """Синтетическая концентрация пыльцы (зёрен/м³) для данной даты и аллергена."""
@@ -32,16 +30,18 @@ def estimate_threshold(entries: list, allergen: str):
         x.append(conc)
         y.append(e["severity"])
 
-    X = np.array(x).reshape(-1, 1)
-    Y = np.array(y)
-    if X.std() == 0:
+    x = np.array(x, dtype=float)
+    y = np.array(y, dtype=float)
+    if x.std() == 0:
         return None, None
 
-    model = LinearRegression().fit(X, Y)
-    r2 = model.score(X, Y)
+    slope, intercept = np.polyfit(x, y, 1)
+    y_pred = slope * x + intercept
+    ss_res = np.sum((y - y_pred) ** 2)
+    ss_tot = np.sum((y - y.mean()) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    slope, intercept = model.coef_[0], model.intercept_
     if slope <= 0:
-        return None, r2
+        return None, round(r2, 2)
     threshold = (3 - intercept) / slope
     return max(round(threshold), 0), round(r2, 2)
